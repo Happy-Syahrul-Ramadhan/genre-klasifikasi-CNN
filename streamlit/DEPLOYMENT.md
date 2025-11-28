@@ -22,13 +22,14 @@
 - [ ] Git LFS configured for `.h5` files (if >100MB)
 - [ ] Repository is public or Streamlit Cloud has access
 
-### 4. Dependencies Fixed
+### 4. Dependencies Fixed (Python 3.12 Compatible)
 - [ ] `streamlit==1.31.0` (stable version)
-- [ ] `tensorflow==2.15.0` (compatible with NumPy 1.24.x)
+- [ ] `tensorflow==2.20.0` (latest, Python 3.12 support)
 - [ ] `librosa==0.10.1` (audio processing)
-- [ ] `numpy==1.24.3` (required for TensorFlow 2.15)
+- [ ] `numpy>=1.26.0,<2.0.0` (TensorFlow 2.20 compatible)
 - [ ] `soundfile==0.12.1` (librosa dependency)
-- [ ] `protobuf==3.20.3` (TensorFlow compatibility)
+
+**Note**: Streamlit Cloud uses Python 3.12. TensorFlow 2.20.0 is required.
 
 ## 🚀 Deployment Steps
 
@@ -58,13 +59,14 @@ git push origin main
 ## 🔧 Troubleshooting
 
 ### Error: "installer returned a non-zero exit code"
-**Cause:** Incompatible package versions
-**Fix:** Use EXACT versions in `requirements.txt`:
+**Cause:** TensorFlow version not compatible with Python 3.12 (Streamlit Cloud default)
+**Fix:** Use Python 3.12 compatible versions in `requirements.txt`:
 ```
 streamlit==1.31.0
-tensorflow==2.15.0
-numpy==1.24.3
+tensorflow==2.20.0
+numpy>=1.26.0,<2.0.0
 ```
+**Key**: TensorFlow 2.15.0 doesn't work on Python 3.12. Use 2.20.0 instead.
 
 ### Error: "Model file not found"
 **Cause:** Absolute path in code
@@ -105,11 +107,17 @@ ffmpeg
 
 ## 📝 Current Status
 
-**Last Updated:** 2025-11-28
-**Status:** Ready for deployment
+**Last Updated:** 2025-11-28 01:45 UTC
+**Status:** ✅ Ready for deployment (Python 3.12 compatible)
+**Python Version:** 3.12 (Streamlit Cloud default)
+**TensorFlow Version:** 2.20.0 (latest)
+
 **Issues Fixed:**
-- ✅ Updated `requirements.txt` with compatible versions
+- ✅ Updated TensorFlow to 2.20.0 (Python 3.12 compatible)
+- ✅ Fixed NumPy range for TensorFlow 2.20 compatibility
 - ✅ Fixed model path to use relative paths
 - ✅ Added `packages.txt` for system dependencies
 - ✅ Updated Streamlit config for production
 - ✅ Added Git LFS configuration for large files
+
+**Latest Commit:** `8f8546a` - TensorFlow 2.20.0 update
