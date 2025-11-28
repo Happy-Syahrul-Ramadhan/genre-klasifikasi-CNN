@@ -14,7 +14,7 @@ Aplikasi web interaktif untuk klasifikasi genre musik menggunakan Convolutional 
 - **Confidence Score**: Tingkat keyakinan prediksi model
 - **Multi-segment Analysis**: Analisis 10 segmen audio (3 detik per segmen)
 
-## 🚀 Cara Menjalankan
+## 🚀 Cara Menjalankan Lokal
 
 ### 1. Install Dependencies
 
@@ -30,6 +30,34 @@ streamlit run app.py
 ```
 
 Aplikasi akan terbuka di browser pada `http://localhost:8501`
+
+## ☁️ Deploy ke Streamlit Cloud
+
+### Prerequisites
+1. Model file `model_cnn2.h5` harus ada di folder `models/`
+2. Repository di-push ke GitHub
+
+### Langkah Deploy:
+
+1. **Push ke GitHub**
+```bash
+git add .
+git commit -m "Prepare for Streamlit Cloud deployment"
+git push origin main
+```
+
+2. **Streamlit Cloud Setup**
+   - Kunjungi [share.streamlit.io](https://share.streamlit.io)
+   - Login dengan GitHub
+   - Click "New app"
+   - Pilih repository: `Happy-Syahrul-Ramadhan/genre_music_classification_with_CNN`
+   - Main file path: `streamlit/app.py`
+   - Click "Deploy"
+
+3. **Troubleshooting Deployment**
+   - Jika error "dependencies", pastikan `requirements.txt` dan `packages.txt` ada
+   - Jika error "model not found", pastikan path model relatif (bukan absolute)
+   - Jika error "memory", model `.h5` mungkin terlalu besar (gunakan Git LFS)
 
 ## 📁 Struktur Folder
 
