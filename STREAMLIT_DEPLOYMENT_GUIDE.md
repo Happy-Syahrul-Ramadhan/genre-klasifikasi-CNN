@@ -4,22 +4,35 @@
 
 ### 1. **requirements.txt** - Package Version Compatibility
 ```diff
-- tensorflow>=2.16.0  ❌ (incompatible with NumPy)
-- tensorflow==2.15.0  ❌ (not available for Python 3.12)
-+ tensorflow==2.20.0  ✅ (latest, Python 3.12 compatible)
+- tensorflow>=2.16.0   ❌ (incompatible with NumPy)
+- tensorflow==2.15.0   ❌ (not available for Python 3.13)
++ tensorflow==2.20.0   ✅ (latest, Python 3.13 compatible)
 
-- numpy<2.0.0        ❌ (too broad)
-+ numpy>=1.26.0,<2.0.0 ✅ (compatible with TF 2.20 and Python 3.12)
+- streamlit==1.31.0    ❌ (requires protobuf<5, conflicts with TF 2.20)
++ streamlit==1.40.2    ✅ (supports protobuf 5.x)
 
-+ soundfile==0.12.1  ✅ (missing librosa dependency)
+- numpy<2.0.0          ❌ (too broad)
++ numpy>=1.26.0,<2.0.0 ✅ (compatible with TF 2.20 and Python 3.13)
+
+- scipy==1.11.4        ❌ (tries to build from source, needs gfortran)
++ scipy==1.14.1        ✅ (pre-built wheels available)
+
++ soundfile==0.12.1    ✅ (missing librosa dependency)
+- protobuf==4.25.5     ❌ (conflicts: Streamlit needs <5, TensorFlow needs >=5.28)
++ (auto-resolved)      ✅ (pip resolves compatible protobuf version)
 ```
 
-**Important**: Streamlit Cloud uses Python 3.12 by default. TensorFlow 2.20.0 is the first version compatible with Python 3.12.
+**Critical Issues Fixed:**
+1. **Python 3.13 Compatibility**: Streamlit Cloud uses Python 3.13. TensorFlow 2.20.0 is the first version that supports it.
+2. **Protobuf Conflict**: TensorFlow 2.20.0 requires `protobuf>=5.28.0`, but Streamlit 1.31.0 requires `protobuf<5`. Solution: Upgrade Streamlit to 1.40.2 which supports protobuf 5.x.
 
 ### 2. **packages.txt** - System Dependencies
 ```
-libsndfile1  → Required by librosa for audio file reading
-ffmpeg       → Audio codec support for MP3/WAV files
+libsndfile1   → Required by librosa for audio file reading
+ffmpeg        → Audio codec support for MP3/WAV files
+gfortran      → Fortran compiler for SciPy
+libblas-dev   → Linear algebra library for SciPy
+liblapack-dev → Linear algebra library for SciPy
 ```
 
 ### 3. **app.py** - Fixed Model Path
@@ -73,16 +86,34 @@ git log --oneline -5
 ## 🐛 If Deployment Still Fails
 
 ### Error: "installer returned a non-zero exit code"
-**Root Cause**: TensorFlow 2.15.0 not available for Python 3.12 (Streamlit Cloud default)
-
-**Current Fix Applied:** ✅ Updated to TensorFlow 2.20.0 (Python 3.12 compatible)
+**Root Causes Fixed:**
+1. ✅ TensorFlow 2.15.0 not available for Python 3.13 → Upgraded to TensorFlow 2.20.0
+2. ✅ SciPy 1.11.4 requires Fortran compiler → Upgraded to SciPy 1.14.1 (pre-built wheels)
+3. ✅ Protobuf conflict: Streamlit 1.31.0 requires `<5`, TensorFlow 2.20.0 requires `>=5.28.0` → Upgraded Streamlit to 1.40.2
 
 **Additional Check:**
 ```bash
-# Test locally first (if you have Python 3.12)
+# Test locally first (if you have Python 3.13)
 cd streamlit
 pip install -r requirements.txt
 streamlit run app.py
+```
+
+### Error: "Cannot install... conflicting dependencies (protobuf)"
+**Example Error:**
+```
+streamlit 1.31.0 depends on protobuf<5
+tensorflow 2.20.0 depends on protobuf>=5.28.0
+```
+
+**Current Fix Applied:** ✅ Upgraded Streamlit to 1.40.2 which supports protobuf 5.x
+
+**Manual Fix (if needed):**
+```bash
+# Update requirements.txt
+streamlit==1.40.2  # or newer
+tensorflow==2.20.0
+# Remove explicit protobuf line - let pip resolve it
 ```
 
 ### Error: "Model file not found"

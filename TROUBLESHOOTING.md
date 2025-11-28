@@ -5,18 +5,22 @@
 ```txt
 # requirements.txt
 streamlit==1.31.0
-tensorflow==2.20.0          ← Python 3.12 compatible
+tensorflow==2.20.0          ← Python 3.13 compatible
 librosa==0.10.1
 numpy>=1.26.0,<2.0.0       ← TensorFlow 2.20 compatible
 matplotlib==3.8.2
-scipy==1.11.4
+scipy==1.14.1              ← Pre-built wheels available
 soundfile==0.12.1
+protobuf==4.25.5           ← TensorFlow 2.20 compatible
 ```
 
 ```txt
 # packages.txt
 libsndfile1
 ffmpeg
+gfortran                   ← Required for SciPy
+libblas-dev                ← Linear algebra for SciPy
+liblapack-dev              ← Linear algebra for SciPy
 ```
 
 ---
@@ -25,8 +29,17 @@ ffmpeg
 
 ### ❌ "Could not find a version that satisfies the requirement tensorflow==2.15.0"
 
-**Problem:** TensorFlow 2.15.0 not available for Python 3.12  
+**Problem:** TensorFlow 2.15.0 not available for Python 3.13  
 **Solution:** ✅ **ALREADY FIXED** - Using TensorFlow 2.20.0
+
+---
+
+### ❌ "Unknown compiler(s): gfortran" / "ERROR: metadata-generation-failed"
+
+**Problem:** SciPy 1.11.4 tries to build from source, needs Fortran compiler  
+**Solution:** ✅ **ALREADY FIXED** 
+- Upgraded to SciPy 1.14.1 (has pre-built wheels)
+- Added gfortran, libblas-dev, liblapack-dev to packages.txt
 
 ---
 
@@ -35,7 +48,8 @@ ffmpeg
 **Possible Causes:**
 1. **Wrong TensorFlow version** → ✅ Fixed (using 2.20.0)
 2. **NumPy incompatibility** → ✅ Fixed (using >=1.26.0,<2.0.0)
-3. **Missing system packages** → ✅ Fixed (packages.txt exists)
+3. **SciPy needs compiler** → ✅ Fixed (using 1.14.1 + gfortran)
+4. **Missing system packages** → ✅ Fixed (packages.txt exists)
 
 ---
 
