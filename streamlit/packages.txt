@@ -1,2 +1,5 @@
 libsndfile1
 ffmpeg
+gfortran
+libblas-dev
+liblapack-dev
