@@ -8,3 +8,13 @@ font = "sans serif"
 [server]
 maxUploadSize = 200
 enableXsrfProtection = true
+headless = true
+port = 8501
+enableCORS = false
+
+[browser]
+gatherUsageStats = false
+
+[runner]
+magicEnabled = true
+fastReruns = true

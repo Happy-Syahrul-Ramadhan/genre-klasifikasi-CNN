@@ -24,8 +24,16 @@ This application uses a Convolutional Neural Network (CNN) to classify music int
 Upload an MP3 file and the model will predict its genre!
 """)
 
-# Model path
-MODEL_PATH = r'D:/Music-Genre-Classification-Using-Convolutional-Neural-Networks-main/Music-Genre-Classification-Using-Convolutional-Neural-Networks-main/models/model_cnn2.h5'
+# Model path - works for both local and production
+MODEL_PATH = os.path.join(os.path.dirname(__file__), '..', 'models', 'model_cnn2.h5')
+
+# Fallback paths for different deployment scenarios
+if not os.path.exists(MODEL_PATH):
+    # Try relative to streamlit folder
+    MODEL_PATH = os.path.join(os.path.dirname(__file__), 'models', 'model_cnn2.h5')
+    if not os.path.exists(MODEL_PATH):
+        # Try current directory
+        MODEL_PATH = 'models/model_cnn2.h5'
 
 # Genre labels
 GENRES = ['ambient', 'pop', 'rock']
