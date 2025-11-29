@@ -61,8 +61,14 @@ def load_trained_model():
 def extract_mfcc_from_audio(file_path):
     """Extract MFCC features from audio file - matches preprocessing exactly"""
     try:
-        # Load audio file
-        audio, sr = librosa.load(file_path, sr=FS, duration=DURATION)
+        # Load audio file with multiple backend support
+        try:
+            audio, sr = librosa.load(file_path, sr=FS, duration=DURATION)
+        except Exception as load_error:
+            st.warning(f"Primary audio loader failed: {load_error}. Trying alternative method...")
+            # Try with audioread backend explicitly
+            import audioread
+            audio, sr = librosa.load(file_path, sr=FS, duration=DURATION, res_type='kaiser_fast')
         
         # Calculate samples per segment (SAME AS PREPROCESSING)
         samples_per_track = FS * DURATION
