@@ -30,11 +30,16 @@ st.set_page_config(
 
 # Title and description
 st.title("🎵 Music Genre Classification")
+
+# Show format requirement based on ffmpeg availability
+if not FFMPEG_AVAILABLE:
+    st.warning("⚠️ **Important:** This server only supports WAV files. Please convert MP3 to WAV before uploading.")
+
 st.markdown("""
 This application uses a Convolutional Neural Network (CNN) to classify music into three genres:
 **Ambient**, **Pop**, and **Rock**.
 
-Upload an audio file (MP3 or WAV recommended) and the model will predict its genre!
+Upload a **WAV audio file** and the model will predict its genre!
 """)
 
 # Model path - works for both local and production
@@ -364,32 +369,37 @@ def main():
     # Sidebar
     st.sidebar.header("📤 Upload Audio")
     
-    # Show ffmpeg status
-    if FFMPEG_AVAILABLE:
-        st.sidebar.success("✅ FFmpeg available - MP3 conversion enabled")
-    else:
-        st.sidebar.error("❌ FFmpeg not found - MP3 not supported")
-        st.sidebar.warning("**Please upload WAV files only!**")
+    # Show ffmpeg status and clear instructions
+    if not FFMPEG_AVAILABLE:
+        st.sidebar.error("⚠️ **MP3 Not Supported on This Server**")
+        st.sidebar.info("**Please upload WAV files only!**\n\nMP3 files will not work due to server limitations.")
     
-    # File format help
-    with st.sidebar.expander("📋 Supported Formats", expanded=False):
-        st.markdown(f"""
-        **Recommended:**
-        - ✅ **WAV** - Best compatibility
+    # File format help - Always show conversion instructions
+    with st.sidebar.expander("🔄 Convert MP3 to WAV", expanded=not FFMPEG_AVAILABLE):
+        st.markdown("""
+        **This server only supports WAV files.**
         
-        **MP3 Support:**
-        - {'✅ Enabled (ffmpeg detected)' if FFMPEG_AVAILABLE else '❌ Disabled (ffmpeg missing)'}
-        - If conversion fails, use WAV instead
+        **How to convert your MP3:**
         
-        **How to convert MP3 to WAV:**
-        - 🌐 Online: [cloudconvert.com](https://cloudconvert.com/mp3-to-wav)
-        - 💻 FFmpeg: `ffmpeg -i input.mp3 output.wav`
+        1. **Online (Easiest):**
+           - Visit: [cloudconvert.com/mp3-to-wav](https://cloudconvert.com/mp3-to-wav)
+           - Upload your MP3
+           - Download the WAV
+           - Upload WAV here
+        
+        2. **Using FFmpeg (Local):**
+           ```bash
+           ffmpeg -i input.mp3 output.wav
+           ```
+        
+        3. **Windows Media Player:**
+           - Open MP3 → Save As → Choose WAV format
         """)
     
     uploaded_file = st.sidebar.file_uploader(
-        "Choose an audio file",
-        type=['mp3', 'wav', 'ogg', 'm4a'],
-        help="Upload WAV for best results"
+        "Choose a WAV audio file",
+        type=['wav'] if not FFMPEG_AVAILABLE else ['wav', 'mp3', 'ogg', 'm4a'],
+        help="WAV format only - MP3 not supported on this server"
     )
     
     st.sidebar.markdown("---")
@@ -434,9 +444,14 @@ Path: {ffmpeg_path or 'N/A'}
             format_emoji = "✅" if file_extension == ".wav" else "⚠️"
             st.write(f"**Format:** {format_emoji} {file_extension.upper()}")
         
-        # Warning for non-WAV files
-        if file_extension != ".wav":
-            st.warning("⚠️ MP3 files may have compatibility issues. If processing fails, please convert to WAV format.")
+        # Strong warning for non-WAV files when ffmpeg not available
+        if file_extension != ".wav" and not FFMPEG_AVAILABLE:
+            st.error("❌ **MP3 files are NOT supported on this server!**")
+            st.error("This file will FAIL to process. Please convert to WAV format first.")
+            st.info("👉 Quick convert: [cloudconvert.com/mp3-to-wav](https://cloudconvert.com/mp3-to-wav)")
+            st.stop()  # Stop execution here
+        elif file_extension != ".wav":
+            st.warning("⚠️ Non-WAV files may have compatibility issues. WAV format is recommended.")
         
         # Save uploaded file temporarily
         with tempfile.NamedTemporaryFile(delete=False, suffix=file_extension) as tmp_file:
@@ -543,11 +558,32 @@ Path: {ffmpeg_path or 'N/A'}
     
     else:
         # Instructions when no file is uploaded
-        st.info("👈 Please upload an MP3 file from the sidebar to begin analysis.")
+        if not FFMPEG_AVAILABLE:
+            st.error("⚠️ **This server only supports WAV files!**")
+            st.info("👈 Please upload a WAV audio file from the sidebar to begin analysis.")
+            
+            # Show conversion instructions prominently
+            st.subheader("🔄 How to Convert MP3 to WAV")
+            st.markdown("""
+            **Option 1 - Online Converter (Recommended):**
+            1. Visit [cloudconvert.com/mp3-to-wav](https://cloudconvert.com/mp3-to-wav)
+            2. Upload your MP3 file
+            3. Click "Convert"
+            4. Download the WAV file
+            5. Upload it here!
+            
+            **Option 2 - Using FFmpeg (Advanced):**
+            ```bash
+            ffmpeg -i your_song.mp3 your_song.wav
+            ```
+            """)
+        else:
+            st.info("👈 Please upload an audio file from the sidebar to begin analysis.")
         
         st.subheader("🎯 How to Use")
-        st.markdown("""
-        1. **Upload** an audio file (WAV/MP3/OGG/M4A) using the sidebar
+        format_text = "WAV" if not FFMPEG_AVAILABLE else "WAV/MP3/OGG/M4A"
+        st.markdown(f"""
+        1. **Upload** an audio file ({format_text}) using the sidebar
         2. **Wait** for the model to analyze the audio
         3. **View** the predicted genre and confidence score
         4. **Explore** various audio visualizations in the tabs
