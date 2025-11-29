@@ -69,61 +69,76 @@ def extract_mfcc_from_audio(file_path):
         audio = None
         sr = FS
         
+        # Detect file format
+        file_ext = os.path.splitext(file_path)[1].lower()
+        
         # Try multiple loading methods with progress feedback
         with st.spinner("🎵 Loading audio file..."):
-            # Method 1: Try librosa with soundfile backend (best for WAV)
-            try:
-                audio, sr = librosa.load(file_path, sr=FS, duration=DURATION, mono=True)
-                if audio is not None and len(audio) > 0:
-                    st.success("✅ Audio loaded successfully!")
-            except Exception as e1:
-                st.info(f"Method 1 failed, trying alternative... ({type(e1).__name__})")
-                
-                # Method 2: Try with audioread backend
+            # For MP3 files, try pydub FIRST (more reliable on Streamlit Cloud)
+            if file_ext == '.mp3':
                 try:
-                    import audioread
+                    from pydub import AudioSegment
+                    import io
+                    
+                    st.info("🔄 Converting MP3 to WAV format...")
+                    
+                    # Load with pydub
+                    audio_segment = AudioSegment.from_file(file_path, format='mp3')
+                    
+                    # Convert to mono
+                    if audio_segment.channels > 1:
+                        audio_segment = audio_segment.set_channels(1)
+                    
+                    # Set sample rate
+                    audio_segment = audio_segment.set_frame_rate(FS)
+                    
+                    # Trim to duration (convert seconds to milliseconds)
+                    if len(audio_segment) > DURATION * 1000:
+                        audio_segment = audio_segment[:DURATION * 1000]
+                    
+                    # Create temporary WAV file
+                    temp_wav = file_path.replace('.mp3', '_temp.wav')
+                    audio_segment.export(temp_wav, format='wav')
+                    
+                    # Load WAV with librosa
+                    audio, sr = librosa.load(temp_wav, sr=FS, mono=True)
+                    
+                    # Clean up temp file
+                    if os.path.exists(temp_wav):
+                        os.unlink(temp_wav)
+                    
+                    st.success("✅ MP3 converted and loaded successfully!")
+                    
+                except Exception as e_pydub:
+                    st.warning(f"⚠️ Pydub conversion failed: {type(e_pydub).__name__}")
+                    
+                    # Fallback to librosa for MP3
+                    try:
+                        audio, sr = librosa.load(file_path, sr=FS, duration=DURATION, mono=True)
+                        st.success("✅ Audio loaded with librosa fallback!")
+                    except Exception as e_librosa:
+                        raise Exception(
+                            f"Could not load MP3 file. This may be due to missing ffmpeg on the server.\n\n"
+                            f"**Please convert your MP3 to WAV format** using:\n"
+                            f"- Online tool: https://cloudconvert.com/mp3-to-wav\n"
+                            f"- Or use ffmpeg locally: `ffmpeg -i input.mp3 output.wav`\n\n"
+                            f"Technical: {type(e_pydub).__name__}, {type(e_librosa).__name__}"
+                        )
+            
+            else:
+                # For WAV and other formats, use librosa directly
+                try:
                     audio, sr = librosa.load(file_path, sr=FS, duration=DURATION, mono=True)
                     if audio is not None and len(audio) > 0:
-                        st.success("✅ Audio loaded with audioread!")
-                except Exception as e2:
-                    st.info(f"Method 2 failed, trying pydub... ({type(e2).__name__})")
-                    
-                    # Method 3: Use pydub to convert to WAV first, then load
-                    try:
-                        from pydub import AudioSegment
-                        import io
-                        
-                        # Load with pydub (supports more formats via ffmpeg)
-                        audio_segment = AudioSegment.from_file(file_path)
-                        
-                        # Convert to mono if needed
-                        if audio_segment.channels > 1:
-                            audio_segment = audio_segment.set_channels(1)
-                        
-                        # Convert to target sample rate
-                        audio_segment = audio_segment.set_frame_rate(FS)
-                        
-                        # Trim to duration
-                        audio_segment = audio_segment[:DURATION * 1000]  # milliseconds
-                        
-                        # Export to WAV in memory
-                        wav_io = io.BytesIO()
-                        audio_segment.export(wav_io, format='wav')
-                        wav_io.seek(0)
-                        
-                        # Load with librosa from memory
-                        audio, sr = librosa.load(wav_io, sr=FS, mono=True)
-                        st.success("✅ Audio converted and loaded via pydub!")
-                        
-                    except Exception as e3:
-                        st.error(f"All loading methods failed:\n1. {type(e1).__name__}\n2. {type(e2).__name__}\n3. {type(e3).__name__}")
-                        raise Exception(
-                            f"Could not load audio file. Please ensure:\n"
-                            f"1. File is a valid audio format (MP3, WAV, OGG)\n"
-                            f"2. File is not corrupted\n"
-                            f"3. File duration is at least 3 seconds\n\n"
-                            f"Technical details: Tried librosa, audioread, and pydub - all failed."
-                        )
+                        st.success("✅ Audio loaded successfully!")
+                except Exception as e:
+                    raise Exception(
+                        f"Could not load audio file. Please ensure:\n"
+                        f"1. File is a valid audio format (WAV recommended)\n"
+                        f"2. File is not corrupted\n"
+                        f"3. File duration is at least 3 seconds\n\n"
+                        f"Error: {type(e).__name__}: {str(e)}"
+                    )
         
         # Validate audio was loaded
         if audio is None or len(audio) == 0:
@@ -186,12 +201,33 @@ def extract_mfcc_from_audio(file_path):
         return np.array(mfccs_list), audio, sr
     
     except Exception as e:
-        st.error(f"❌ **Error processing audio:** {str(e)}")
-        st.info("💡 **Troubleshooting tips:**\n"
-                "- Try converting your file to WAV format\n"
-                "- Ensure audio is at least 3 seconds long\n"
-                "- Check if file is corrupted\n"
-                "- Try a different audio file")
+        st.error(f"❌ **Error processing audio**")
+        
+        # Show error details in expander
+        with st.expander("🔍 Error Details"):
+            st.code(str(e))
+        
+        # Show conversion instructions prominently
+        st.warning("### 🔧 How to Fix This")
+        st.markdown("""
+        **The file format may not be supported. Please convert to WAV:**
+        
+        1. **Option 1 - Online Converter (Easiest)**
+           - Visit: [cloudconvert.com/mp3-to-wav](https://cloudconvert.com/mp3-to-wav)
+           - Upload your MP3 file
+           - Download the converted WAV file
+           - Upload the WAV file here
+        
+        2. **Option 2 - Using FFmpeg (Advanced)**
+           ```bash
+           ffmpeg -i your_audio.mp3 output.wav
+           ```
+        
+        3. **Option 3 - Try a different file**
+           - Use a WAV file directly
+           - Ensure file is at least 3 seconds long
+        """)
+        
         return None, None, None
 
 
@@ -306,12 +342,26 @@ def main():
     
     # Sidebar
     st.sidebar.header("📤 Upload Audio")
-    st.sidebar.info("💡 **Tip:** WAV files work best. If MP3 fails, try converting to WAV first.")
+    
+    # File format help
+    with st.sidebar.expander("📋 Supported Formats", expanded=False):
+        st.markdown("""
+        **Recommended:**
+        - ✅ **WAV** - Best compatibility
+        
+        **May require conversion:**
+        - ⚠️ **MP3** - If fails, convert to WAV
+        - ⚠️ **OGG, M4A** - Limited support
+        
+        **How to convert MP3 to WAV:**
+        - 🌐 Online: [cloudconvert.com](https://cloudconvert.com/mp3-to-wav)
+        - 💻 FFmpeg: `ffmpeg -i input.mp3 output.wav`
+        """)
     
     uploaded_file = st.sidebar.file_uploader(
         "Choose an audio file",
         type=['mp3', 'wav', 'ogg', 'm4a'],
-        help="Upload an audio file - WAV recommended for best compatibility"
+        help="Upload WAV for best results"
     )
     
     st.sidebar.markdown("---")
