@@ -7,19 +7,14 @@ from tensorflow.keras.models import load_model
 import tempfile
 import os
 import math
-import subprocess
-import shutil
+import io
 
-# Configure ffmpeg path for pydub on Streamlit Cloud
-if shutil.which('ffmpeg'):
-    # ffmpeg is available in PATH
-    from pydub import AudioSegment
-    AudioSegment.converter = shutil.which('ffmpeg')
-    AudioSegment.ffmpeg = shutil.which('ffmpeg')
-    AudioSegment.ffprobe = shutil.which('ffprobe')
-    FFMPEG_AVAILABLE = True
-else:
-    FFMPEG_AVAILABLE = False
+# Try to import PyAV for MP3 decoding
+try:
+    import av
+    MP3_SUPPORT = True
+except ImportError:
+    MP3_SUPPORT = False
 
 # Page configuration
 st.set_page_config(
@@ -31,9 +26,9 @@ st.set_page_config(
 # Title and description
 st.title("🎵 Music Genre Classification")
 
-# Show format requirement based on ffmpeg availability
-if not FFMPEG_AVAILABLE:
-    st.warning("⚠️ **Important:** This server only supports WAV files. Please convert MP3 to WAV before uploading.")
+# Show format requirement based on MP3 support
+if not MP3_SUPPORT:
+    st.warning("⚠️ **Important:** MP3 support unavailable. Please convert MP3 to WAV before uploading.")
 
 st.markdown("""
 This application uses a Convolutional Neural Network (CNN) to classify music into three genres:
@@ -76,6 +71,49 @@ def load_trained_model():
         return None
 
 
+def decode_mp3_with_pyav(file_path, target_sr=22050, duration=30):
+    """Decode MP3 file using PyAV (FFmpeg wrapper)"""
+    try:
+        container = av.open(file_path)
+        audio_stream = container.streams.audio[0]
+        
+        # Collect audio frames
+        audio_data = []
+        frame_count = 0
+        max_frames = int(duration * target_sr / 1024)  # Approximate
+        
+        for frame in container.decode(audio=0):
+            if frame_count >= max_frames:
+                break
+            # Convert to numpy array
+            array = frame.to_ndarray()
+            # Convert to mono if stereo
+            if array.ndim == 2:
+                array = array.mean(axis=0)
+            audio_data.append(array)
+            frame_count += 1
+        
+        container.close()
+        
+        # Concatenate all frames
+        audio = np.concatenate(audio_data)
+        
+        # Resample if needed
+        original_sr = audio_stream.sample_rate
+        if original_sr != target_sr:
+            audio = librosa.resample(audio, orig_sr=original_sr, target_sr=target_sr)
+        
+        # Trim to duration
+        max_samples = target_sr * duration
+        if len(audio) > max_samples:
+            audio = audio[:max_samples]
+        
+        return audio, target_sr
+        
+    except Exception as e:
+        raise Exception(f"PyAV decoding failed: {str(e)}")
+
+
 def extract_mfcc_from_audio(file_path):
     """Extract MFCC features from audio file - matches preprocessing exactly"""
     try:
@@ -92,63 +130,33 @@ def extract_mfcc_from_audio(file_path):
         
         # Try multiple loading methods with progress feedback
         with st.spinner("🎵 Loading audio file..."):
-            # For MP3 files, check ffmpeg availability first
+            # For MP3 files, use PyAV decoder
             if file_ext == '.mp3':
-                if not FFMPEG_AVAILABLE:
-                    # FFmpeg not available - show clear message
+                if not MP3_SUPPORT:
                     raise Exception(
-                        f"❌ **MP3 files cannot be processed on this server** (ffmpeg not found).\n\n"
-                        f"This is a Streamlit Cloud limitation. Please convert your MP3 to WAV format."
+                        f"❌ **MP3 support not available** (PyAV library missing).\n\n"
+                        f"Please convert your MP3 to WAV format."
                     )
                 
                 try:
-                    from pydub import AudioSegment
-                    import io
+                    st.info("🔄 Decoding MP3 file...")
+                    audio, sr = decode_mp3_with_pyav(file_path, target_sr=FS, duration=DURATION)
+                    st.success("✅ MP3 decoded successfully!")
                     
-                    st.info("🔄 Converting MP3 to WAV using ffmpeg...")
-                    
-                    # Try using ffmpeg directly first (more reliable)
-                    temp_wav = file_path.replace('.mp3', '_temp.wav')
-                    
-                    # Use subprocess to call ffmpeg directly
-                    ffmpeg_cmd = [
-                        'ffmpeg', '-i', file_path,
-                        '-ar', str(FS),  # sample rate
-                        '-ac', '1',       # mono
-                        '-t', str(DURATION),  # duration
-                        '-y',             # overwrite
-                        temp_wav
-                    ]
-                    
-                    result = subprocess.run(ffmpeg_cmd, capture_output=True, text=True)
-                    
-                    if result.returncode == 0 and os.path.exists(temp_wav):
-                        # Load WAV with librosa
-                        audio, sr = librosa.load(temp_wav, sr=FS, mono=True)
-                        # Clean up temp file
-                        os.unlink(temp_wav)
-                        st.success("✅ MP3 converted and loaded successfully!")
-                    else:
-                        # Clean up if exists
-                        if os.path.exists(temp_wav):
-                            os.unlink(temp_wav)
-                        raise Exception(f"FFmpeg conversion failed: {result.stderr[:200]}")
-                    
-                except subprocess.CalledProcessError as e:
-                    st.error(f"⚠️ FFmpeg error: {str(e)}")
-                    
-                    # Last resort: Try librosa directly
+                except Exception as e_pyav:
+                    # Fallback to librosa (which uses audioread)
                     try:
+                        st.info("⚠️ PyAV failed, trying librosa...")
                         audio, sr = librosa.load(file_path, sr=FS, duration=DURATION, mono=True)
-                        st.success("✅ Audio loaded with librosa fallback!")
+                        st.success("✅ Audio loaded with librosa!")
                     except Exception as e_librosa:
                         raise Exception(
-                            f"❌ **Cannot process MP3 on this server.**\n\n"
-                            f"FFmpeg failed to convert the file.\n\n"
-                            f"**Please convert your MP3 to WAV format:**\n"
+                            f"❌ **Cannot decode MP3 file.**\n\n"
+                            f"Both PyAV and librosa failed.\n\n"
+                            f"**Please convert to WAV format:**\n"
                             f"- Online: https://cloudconvert.com/mp3-to-wav\n"
                             f"- Local: `ffmpeg -i input.mp3 output.wav`\n\n"
-                            f"Technical: subprocess error, librosa: {type(e_librosa).__name__}"
+                            f"Technical: {type(e_pyav).__name__}, {type(e_librosa).__name__}"
                         )
             
             else:
@@ -369,13 +377,15 @@ def main():
     # Sidebar
     st.sidebar.header("📤 Upload Audio")
     
-    # Show ffmpeg status and clear instructions
-    if not FFMPEG_AVAILABLE:
-        st.sidebar.error("⚠️ **MP3 Not Supported on This Server**")
-        st.sidebar.info("**Please upload WAV files only!**\n\nMP3 files will not work due to server limitations.")
+    # Show MP3 support status
+    if MP3_SUPPORT:
+        st.sidebar.success("✅ MP3 support enabled (PyAV)")
+    else:
+        st.sidebar.error("⚠️ **MP3 Not Supported**")
+        st.sidebar.info("**Please upload WAV files only!**\n\nMP3 files will not work.")
     
     # File format help - Always show conversion instructions
-    with st.sidebar.expander("🔄 Convert MP3 to WAV", expanded=not FFMPEG_AVAILABLE):
+    with st.sidebar.expander("🔄 Convert MP3 to WAV", expanded=not MP3_SUPPORT):
         st.markdown("""
         **This server only supports WAV files.**
         
@@ -397,9 +407,9 @@ def main():
         """)
     
     uploaded_file = st.sidebar.file_uploader(
-        "Choose a WAV audio file",
-        type=['wav'] if not FFMPEG_AVAILABLE else ['wav', 'mp3', 'ogg', 'm4a'],
-        help="WAV format only - MP3 not supported on this server"
+        "Choose an audio file",
+        type=['wav', 'mp3'] if MP3_SUPPORT else ['wav'],
+        help="WAV recommended, MP3 supported" if MP3_SUPPORT else "WAV only - MP3 not supported"
     )
     
     st.sidebar.markdown("---")
@@ -418,10 +428,9 @@ def main():
     
     # Debug info (collapsible)
     with st.sidebar.expander("🔧 System Info (Debug)", expanded=False):
-        ffmpeg_path = shutil.which('ffmpeg')
         st.code(f"""
-FFmpeg: {'✅ Found' if ffmpeg_path else '❌ Not found'}
-Path: {ffmpeg_path or 'N/A'}
+MP3 Support (PyAV): {'✅ Available' if MP3_SUPPORT else '❌ Not available'}
+Librosa: ✅ Available
         """.strip())
     
     # Main content
@@ -444,8 +453,8 @@ Path: {ffmpeg_path or 'N/A'}
             format_emoji = "✅" if file_extension == ".wav" else "⚠️"
             st.write(f"**Format:** {format_emoji} {file_extension.upper()}")
         
-        # Strong warning for non-WAV files when ffmpeg not available
-        if file_extension != ".wav" and not FFMPEG_AVAILABLE:
+        # Warning for non-WAV files when MP3 not supported
+        if file_extension == ".mp3" and not MP3_SUPPORT:
             st.error("❌ **MP3 files are NOT supported on this server!**")
             st.error("This file will FAIL to process. Please convert to WAV format first.")
             st.info("👉 Quick convert: [cloudconvert.com/mp3-to-wav](https://cloudconvert.com/mp3-to-wav)")
@@ -558,8 +567,8 @@ Path: {ffmpeg_path or 'N/A'}
     
     else:
         # Instructions when no file is uploaded
-        if not FFMPEG_AVAILABLE:
-            st.error("⚠️ **This server only supports WAV files!**")
+        if not MP3_SUPPORT:
+            st.warning("⚠️ **MP3 support unavailable - WAV files only!**")
             st.info("👈 Please upload a WAV audio file from the sidebar to begin analysis.")
             
             # Show conversion instructions prominently
@@ -581,7 +590,7 @@ Path: {ffmpeg_path or 'N/A'}
             st.info("👈 Please upload an audio file from the sidebar to begin analysis.")
         
         st.subheader("🎯 How to Use")
-        format_text = "WAV" if not FFMPEG_AVAILABLE else "WAV/MP3/OGG/M4A"
+        format_text = "WAV/MP3" if MP3_SUPPORT else "WAV"
         st.markdown(f"""
         1. **Upload** an audio file ({format_text}) using the sidebar
         2. **Wait** for the model to analyze the audio

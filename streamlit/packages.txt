@@ -1,7 +1,5 @@
-ffmpeg
 libsndfile1
-libsndfile1-dev
-libmpg123-0
-libavcodec-extra
-libavformat-dev
-libavutil-dev
+libavformat59
+libavcodec59
+libavutil57
+libswresample4
