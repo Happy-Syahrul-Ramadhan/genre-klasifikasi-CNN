@@ -21,7 +21,7 @@ st.markdown("""
 This application uses a Convolutional Neural Network (CNN) to classify music into three genres:
 **Ambient**, **Pop**, and **Rock**.
 
-Upload an MP3 file and the model will predict its genre!
+Upload an audio file (MP3 or WAV recommended) and the model will predict its genre!
 """)
 
 # Model path - works for both local and production
@@ -61,14 +61,45 @@ def load_trained_model():
 def extract_mfcc_from_audio(file_path):
     """Extract MFCC features from audio file - matches preprocessing exactly"""
     try:
-        # Load audio file with multiple backend support
-        try:
-            audio, sr = librosa.load(file_path, sr=FS, duration=DURATION)
-        except Exception as load_error:
-            st.warning(f"Primary audio loader failed: {load_error}. Trying alternative method...")
-            # Try with audioread backend explicitly
-            import audioread
-            audio, sr = librosa.load(file_path, sr=FS, duration=DURATION, res_type='kaiser_fast')
+        # Suppress librosa warnings for cleaner output
+        import warnings
+        warnings.filterwarnings('ignore', category=UserWarning)
+        warnings.filterwarnings('ignore', category=FutureWarning)
+        
+        audio = None
+        sr = FS
+        
+        # Try multiple loading methods with progress feedback
+        with st.spinner("🎵 Loading audio file..."):
+            # Method 1: Try with audioread first (better for various MP3 formats)
+            try:
+                audio, sr = librosa.load(file_path, sr=FS, duration=DURATION, mono=True)
+                if audio is not None and len(audio) > 0:
+                    st.success("✅ Audio loaded successfully!")
+            except Exception as e1:
+                # Method 2: Try loading entire file without duration limit, then trim
+                try:
+                    audio, sr = librosa.load(file_path, sr=FS, mono=True)
+                    if len(audio) > FS * DURATION:
+                        audio = audio[:FS * DURATION]
+                    st.success("✅ Audio loaded and trimmed!")
+                except Exception as e2:
+                    raise Exception(
+                        f"Could not load audio file. Please ensure:\n"
+                        f"1. File is a valid audio format (MP3, WAV, OGG)\n"
+                        f"2. File is not corrupted\n"
+                        f"3. File duration is at least 3 seconds\n\n"
+                        f"Try converting to WAV format for best compatibility."
+                    )
+        
+        # Validate audio was loaded
+        if audio is None or len(audio) == 0:
+            raise Exception("Audio file loaded but contains no data")
+        
+        # Pad audio if too short
+        min_length = FS * 3  # Minimum 3 seconds
+        if len(audio) < min_length:
+            audio = np.pad(audio, (0, min_length - len(audio)), mode='constant')
         
         # Calculate samples per segment (SAME AS PREPROCESSING)
         samples_per_track = FS * DURATION
@@ -79,10 +110,15 @@ def extract_mfcc_from_audio(file_path):
         
         mfccs_list = []
         
-        # Extract MFCC for each segment
+        # Extract MFCC for each segment with progress bar
+        progress_bar = st.progress(0)
         for seg in range(NUM_SEGMENTS):
             start_sample = seg * samps_per_segment
             end_sample = start_sample + samps_per_segment
+            
+            # Handle edge case where segment exceeds audio length
+            if end_sample > len(audio):
+                audio = np.pad(audio, (0, end_sample - len(audio)), mode='constant')
             
             # Extract MFCC
             mfcc = librosa.feature.mfcc(
@@ -98,15 +134,31 @@ def extract_mfcc_from_audio(file_path):
             # CRITICAL: Only append if correct length (SAME AS PREPROCESSING)
             if len(mfcc) == mfccs_per_segment:
                 mfccs_list.append(mfcc)
+            
+            # Update progress
+            progress_bar.progress((seg + 1) / NUM_SEGMENTS)
         
-        # Check if we got all segments
+        progress_bar.empty()
+        
+        # Validate we have enough segments
+        if len(mfccs_list) < 5:  # Need at least half the segments
+            raise Exception(
+                f"Only extracted {len(mfccs_list)}/{NUM_SEGMENTS} valid segments. "
+                f"Audio may be too short or corrupted."
+            )
+        
         if len(mfccs_list) != NUM_SEGMENTS:
-            st.warning(f"⚠️ Only {len(mfccs_list)}/{NUM_SEGMENTS} segments have correct length. This may affect prediction accuracy.")
+            st.warning(f"⚠️ Extracted {len(mfccs_list)}/{NUM_SEGMENTS} segments. Prediction may be less accurate.")
         
         return np.array(mfccs_list), audio, sr
     
     except Exception as e:
-        st.error(f"Error extracting features: {e}")
+        st.error(f"❌ **Error processing audio:** {str(e)}")
+        st.info("💡 **Troubleshooting tips:**\n"
+                "- Try converting your file to WAV format\n"
+                "- Ensure audio is at least 3 seconds long\n"
+                "- Check if file is corrupted\n"
+                "- Try a different audio file")
         return None, None, None
 
 
@@ -221,10 +273,12 @@ def main():
     
     # Sidebar
     st.sidebar.header("📤 Upload Audio")
+    st.sidebar.info("💡 **Tip:** WAV files work best. If MP3 fails, try converting to WAV first.")
+    
     uploaded_file = st.sidebar.file_uploader(
-        "Choose an MP3 file",
-        type=['mp3'],
-        help="Upload an MP3 file to classify its genre"
+        "Choose an audio file",
+        type=['mp3', 'wav', 'ogg', 'm4a'],
+        help="Upload an audio file - WAV recommended for best compatibility"
     )
     
     st.sidebar.markdown("---")
@@ -239,29 +293,45 @@ def main():
     **Features:**
     - 13 MFCCs (Mel-Frequency Cepstral Coefficients)
     - 10 segments per track
+    
+    **Supported Formats:**
+    - ✅ WAV (best)
+    - ⚠️ MP3 (may have issues)
+    - ⚠️ OGG, M4A (experimental)
     """)
     
     # Main content
     if uploaded_file is not None:
         st.header("📊 Analysis Results")
         
+        # Determine file extension
+        file_extension = os.path.splitext(uploaded_file.name)[1].lower()
+        if not file_extension:
+            file_extension = '.mp3'  # default
+        
+        # Display file info
+        st.subheader("📁 File Information")
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.write(f"**Filename:** {uploaded_file.name}")
+        with col2:
+            st.write(f"**File size:** {uploaded_file.size / 1024:.2f} KB")
+        with col3:
+            format_emoji = "✅" if file_extension == ".wav" else "⚠️"
+            st.write(f"**Format:** {format_emoji} {file_extension.upper()}")
+        
+        # Warning for non-WAV files
+        if file_extension != ".wav":
+            st.warning("⚠️ MP3 files may have compatibility issues. If processing fails, please convert to WAV format.")
+        
         # Save uploaded file temporarily
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.mp3') as tmp_file:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=file_extension) as tmp_file:
             tmp_file.write(uploaded_file.read())
             tmp_file_path = tmp_file.name
         
         try:
-            # Display file info
-            st.subheader("📁 File Information")
-            col1, col2 = st.columns(2)
-            with col1:
-                st.write(f"**Filename:** {uploaded_file.name}")
-            with col2:
-                st.write(f"**File size:** {uploaded_file.size / 1024:.2f} KB")
-            
             # Extract features
-            with st.spinner("🎵 Processing audio and extracting features..."):
-                mfccs, audio, sr = extract_mfcc_from_audio(tmp_file_path)
+            mfccs, audio, sr = extract_mfcc_from_audio(tmp_file_path)
             
             if mfccs is not None:
                 st.success("✅ Features extracted successfully!")
@@ -363,7 +433,7 @@ def main():
         
         st.subheader("🎯 How to Use")
         st.markdown("""
-        1. **Upload** an MP3 file using the sidebar
+        1. **Upload** an audio file (WAV/MP3/OGG/M4A) using the sidebar
         2. **Wait** for the model to analyze the audio
         3. **View** the predicted genre and confidence score
         4. **Explore** various audio visualizations in the tabs
