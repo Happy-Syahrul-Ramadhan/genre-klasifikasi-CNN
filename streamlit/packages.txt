@@ -1,5 +1,6 @@
 libsndfile1
-libavformat59
-libavcodec59
-libavutil57
-libswresample4
+ffmpeg
+libmpg123-0
+gfortran
+libblas-dev
+liblapack-dev

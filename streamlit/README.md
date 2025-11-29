@@ -4,7 +4,7 @@ Aplikasi web interaktif untuk klasifikasi genre musik menggunakan Convolutional 
 
 ## 🎵 Fitur
 
-- **Upload File Audio**: Upload file musik dalam format MP3, WAV, OGG, atau M4A (WAV direkomendasikan)
+- **Upload File MP3**: Upload file musik dalam format MP3
 - **Prediksi Genre**: Model CNN memprediksi genre (Ambient, Pop, Rock)
 - **Visualisasi Audio**:
   - Waveform (gelombang audio)
@@ -122,32 +122,13 @@ Koefisien cepstral frekuensi mel yang digunakan sebagai input model
 ```
 Error loading model: [Errno 2] No such file or directory
 ```
-**Solusi**: Pastikan file `model_cnn2.h5` ada di folder `models/`
+**Solusi**: Pastikan file `model_cnn3.h5` ada di folder `models/`
 
 ### Error: Memory error
 **Solusi**: File audio terlalu besar. Coba file dengan durasi lebih pendek (<30 detik)
 
-### Error: "Giving up searching valid MPEG header" (MP3 Issues)
-**Penyebab**: File MP3 rusak atau codec tidak didukung  
-**Solusi**: 
-1. **Gunakan file WAV** (format paling kompatibel)
-2. Convert MP3 ke WAV: `ffmpeg -i input.mp3 -ar 22050 -ac 1 output.wav`
-3. Lihat [AUDIO_COMPATIBILITY.md](AUDIO_COMPATIBILITY.md) untuk detail lengkap
-
-### Error: "PySoundFile failed. Trying audioread instead"
-**Catatan**: Ini adalah warning normal untuk MP3 - app akan otomatis fallback ke backend alternatif. Jika masih gagal, gunakan WAV.
-
-### Error: "All audio loading methods failed"
-**Solusi**: 
-1. File kemungkinan rusak - cek dengan media player
-2. Convert ke WAV format
-3. Coba file audio lain
-
-### 📖 Panduan Format Audio Lengkap
-Lihat [AUDIO_COMPATIBILITY.md](AUDIO_COMPATIBILITY.md) untuk:
-- Format yang didukung dan rekomendasi
-- Cara convert audio ke format optimal
-- Troubleshooting masalah loading audio detail
+### Error: Invalid audio file
+**Solusi**: Pastikan file dalam format MP3 yang valid
 
 ## 📝 Catatan
 
