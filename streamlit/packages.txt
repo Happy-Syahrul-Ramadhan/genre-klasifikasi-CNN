@@ -1,10 +1,7 @@
-libsndfile1
 ffmpeg
+libsndfile1
+libsndfile1-dev
 libmpg123-0
-libmpg123-dev
 libavcodec-extra
 libavformat-dev
 libavutil-dev
-gfortran
-libblas-dev
-liblapack-dev

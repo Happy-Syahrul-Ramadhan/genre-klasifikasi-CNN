@@ -71,26 +71,59 @@ def extract_mfcc_from_audio(file_path):
         
         # Try multiple loading methods with progress feedback
         with st.spinner("🎵 Loading audio file..."):
-            # Method 1: Try with audioread first (better for various MP3 formats)
+            # Method 1: Try librosa with soundfile backend (best for WAV)
             try:
                 audio, sr = librosa.load(file_path, sr=FS, duration=DURATION, mono=True)
                 if audio is not None and len(audio) > 0:
                     st.success("✅ Audio loaded successfully!")
             except Exception as e1:
-                # Method 2: Try loading entire file without duration limit, then trim
+                st.info(f"Method 1 failed, trying alternative... ({type(e1).__name__})")
+                
+                # Method 2: Try with audioread backend
                 try:
-                    audio, sr = librosa.load(file_path, sr=FS, mono=True)
-                    if len(audio) > FS * DURATION:
-                        audio = audio[:FS * DURATION]
-                    st.success("✅ Audio loaded and trimmed!")
+                    import audioread
+                    audio, sr = librosa.load(file_path, sr=FS, duration=DURATION, mono=True)
+                    if audio is not None and len(audio) > 0:
+                        st.success("✅ Audio loaded with audioread!")
                 except Exception as e2:
-                    raise Exception(
-                        f"Could not load audio file. Please ensure:\n"
-                        f"1. File is a valid audio format (MP3, WAV, OGG)\n"
-                        f"2. File is not corrupted\n"
-                        f"3. File duration is at least 3 seconds\n\n"
-                        f"Try converting to WAV format for best compatibility."
-                    )
+                    st.info(f"Method 2 failed, trying pydub... ({type(e2).__name__})")
+                    
+                    # Method 3: Use pydub to convert to WAV first, then load
+                    try:
+                        from pydub import AudioSegment
+                        import io
+                        
+                        # Load with pydub (supports more formats via ffmpeg)
+                        audio_segment = AudioSegment.from_file(file_path)
+                        
+                        # Convert to mono if needed
+                        if audio_segment.channels > 1:
+                            audio_segment = audio_segment.set_channels(1)
+                        
+                        # Convert to target sample rate
+                        audio_segment = audio_segment.set_frame_rate(FS)
+                        
+                        # Trim to duration
+                        audio_segment = audio_segment[:DURATION * 1000]  # milliseconds
+                        
+                        # Export to WAV in memory
+                        wav_io = io.BytesIO()
+                        audio_segment.export(wav_io, format='wav')
+                        wav_io.seek(0)
+                        
+                        # Load with librosa from memory
+                        audio, sr = librosa.load(wav_io, sr=FS, mono=True)
+                        st.success("✅ Audio converted and loaded via pydub!")
+                        
+                    except Exception as e3:
+                        st.error(f"All loading methods failed:\n1. {type(e1).__name__}\n2. {type(e2).__name__}\n3. {type(e3).__name__}")
+                        raise Exception(
+                            f"Could not load audio file. Please ensure:\n"
+                            f"1. File is a valid audio format (MP3, WAV, OGG)\n"
+                            f"2. File is not corrupted\n"
+                            f"3. File duration is at least 3 seconds\n\n"
+                            f"Technical details: Tried librosa, audioread, and pydub - all failed."
+                        )
         
         # Validate audio was loaded
         if audio is None or len(audio) == 0:
