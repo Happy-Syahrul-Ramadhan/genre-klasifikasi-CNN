@@ -7,8 +7,6 @@ from tensorflow.keras.models import load_model
 import tempfile
 import os
 import math
-from pydub import AudioSegment
-import io
 
 # Page configuration
 st.set_page_config(
@@ -31,8 +29,10 @@ MODEL_PATH = os.path.join(os.path.dirname(__file__), '..', 'models', 'model_cnn2
 
 # Fallback paths for different deployment scenarios
 if not os.path.exists(MODEL_PATH):
+    # Try relative to streamlit folder
     MODEL_PATH = os.path.join(os.path.dirname(__file__), 'models', 'model_cnn2.h5')
     if not os.path.exists(MODEL_PATH):
+        # Try current directory
         MODEL_PATH = 'models/model_cnn2.h5'
 
 # Genre labels
@@ -58,51 +58,17 @@ def load_trained_model():
         return None
 
 
-def convert_mp3_to_wav(mp3_file):
-    """Convert MP3 to WAV using pydub (more reliable for cloud deployment)"""
-    try:
-        # Read MP3 file
-        audio = AudioSegment.from_mp3(mp3_file)
-        
-        # Export as WAV to bytes
-        wav_io = io.BytesIO()
-        audio.export(wav_io, format='wav')
-        wav_io.seek(0)
-        
-        return wav_io
-    except Exception as e:
-        st.error(f"Error converting MP3 to WAV: {e}")
-        return None
-
-
-def extract_mfcc_from_audio(file_path, is_wav=False):
+def extract_mfcc_from_audio(file_path):
     """Extract MFCC features from audio file - matches preprocessing exactly"""
     try:
-        # Load audio file with multiple methods
-        audio = None
-        sr = None
-        
-        if is_wav:
-            # If already converted to WAV, load directly
+        # Load audio file with multiple backend support
+        try:
             audio, sr = librosa.load(file_path, sr=FS, duration=DURATION)
-        else:
-            # Try multiple loading methods
-            methods = [
-                lambda: librosa.load(file_path, sr=FS, duration=DURATION),
-                lambda: librosa.load(file_path, sr=FS, duration=DURATION, res_type='kaiser_fast'),
-            ]
-            
-            for i, method in enumerate(methods):
-                try:
-                    audio, sr = method()
-                    break
-                except Exception as e:
-                    if i == len(methods) - 1:
-                        raise e
-                    continue
-        
-        if audio is None or len(audio) == 0:
-            raise ValueError("Failed to load audio data")
+        except Exception as load_error:
+            st.warning(f"Primary audio loader failed: {load_error}. Trying alternative method...")
+            # Try with audioread backend explicitly
+            import audioread
+            audio, sr = librosa.load(file_path, sr=FS, duration=DURATION, res_type='kaiser_fast')
         
         # Calculate samples per segment (SAME AS PREPROCESSING)
         samples_per_track = FS * DURATION
@@ -279,31 +245,23 @@ def main():
     if uploaded_file is not None:
         st.header("📊 Analysis Results")
         
-        # Display file info
-        st.subheader("📁 File Information")
-        col1, col2 = st.columns(2)
-        with col1:
-            st.write(f"**Filename:** {uploaded_file.name}")
-        with col2:
-            st.write(f"**File size:** {uploaded_file.size / 1024:.2f} KB")
+        # Save uploaded file temporarily
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.mp3') as tmp_file:
+            tmp_file.write(uploaded_file.read())
+            tmp_file_path = tmp_file.name
         
         try:
-            # Convert MP3 to WAV first (more reliable)
-            with st.spinner("🔄 Converting audio format..."):
-                wav_file = convert_mp3_to_wav(uploaded_file)
-            
-            if wav_file is None:
-                st.error("Failed to convert MP3 file. Please try a different file.")
-                return
-            
-            # Save WAV file temporarily
-            with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as tmp_file:
-                tmp_file.write(wav_file.read())
-                tmp_file_path = tmp_file.name
+            # Display file info
+            st.subheader("📁 File Information")
+            col1, col2 = st.columns(2)
+            with col1:
+                st.write(f"**Filename:** {uploaded_file.name}")
+            with col2:
+                st.write(f"**File size:** {uploaded_file.size / 1024:.2f} KB")
             
             # Extract features
             with st.spinner("🎵 Processing audio and extracting features..."):
-                mfccs, audio, sr = extract_mfcc_from_audio(tmp_file_path, is_wav=True)
+                mfccs, audio, sr = extract_mfcc_from_audio(tmp_file_path)
             
             if mfccs is not None:
                 st.success("✅ Features extracted successfully!")
@@ -390,15 +348,14 @@ def main():
                     st.write(f"\n**MFCC Shape:** {mfccs.shape}")
                     st.write(f"**Audio Duration:** {len(audio)/sr:.2f} seconds")
                     st.write(f"**Sampling Rate:** {sr} Hz")
-            
-            # Clean up temporary file
-            if os.path.exists(tmp_file_path):
-                os.unlink(tmp_file_path)
         
         except Exception as e:
             st.error(f"An error occurred: {e}")
-            import traceback
-            st.error(traceback.format_exc())
+        
+        finally:
+            # Clean up temporary file
+            if os.path.exists(tmp_file_path):
+                os.unlink(tmp_file_path)
     
     else:
         # Instructions when no file is uploaded

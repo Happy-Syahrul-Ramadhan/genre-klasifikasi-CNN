@@ -4,7 +4,3 @@ libmpg123-0
 gfortran
 libblas-dev
 liblapack-dev
-libavcodec-extra
-libavformat-dev
-libavutil-dev
-libswresample-dev
