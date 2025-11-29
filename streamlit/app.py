@@ -7,6 +7,19 @@ from tensorflow.keras.models import load_model
 import tempfile
 import os
 import math
+import subprocess
+import shutil
+
+# Configure ffmpeg path for pydub on Streamlit Cloud
+if shutil.which('ffmpeg'):
+    # ffmpeg is available in PATH
+    from pydub import AudioSegment
+    AudioSegment.converter = shutil.which('ffmpeg')
+    AudioSegment.ffmpeg = shutil.which('ffmpeg')
+    AudioSegment.ffprobe = shutil.which('ffprobe')
+    FFMPEG_AVAILABLE = True
+else:
+    FFMPEG_AVAILABLE = False
 
 # Page configuration
 st.set_page_config(
@@ -74,55 +87,63 @@ def extract_mfcc_from_audio(file_path):
         
         # Try multiple loading methods with progress feedback
         with st.spinner("🎵 Loading audio file..."):
-            # For MP3 files, try pydub FIRST (more reliable on Streamlit Cloud)
+            # For MP3 files, check ffmpeg availability first
             if file_ext == '.mp3':
+                if not FFMPEG_AVAILABLE:
+                    # FFmpeg not available - show clear message
+                    raise Exception(
+                        f"❌ **MP3 files cannot be processed on this server** (ffmpeg not found).\n\n"
+                        f"This is a Streamlit Cloud limitation. Please convert your MP3 to WAV format."
+                    )
+                
                 try:
                     from pydub import AudioSegment
                     import io
                     
-                    st.info("🔄 Converting MP3 to WAV format...")
+                    st.info("🔄 Converting MP3 to WAV using ffmpeg...")
                     
-                    # Load with pydub
-                    audio_segment = AudioSegment.from_file(file_path, format='mp3')
-                    
-                    # Convert to mono
-                    if audio_segment.channels > 1:
-                        audio_segment = audio_segment.set_channels(1)
-                    
-                    # Set sample rate
-                    audio_segment = audio_segment.set_frame_rate(FS)
-                    
-                    # Trim to duration (convert seconds to milliseconds)
-                    if len(audio_segment) > DURATION * 1000:
-                        audio_segment = audio_segment[:DURATION * 1000]
-                    
-                    # Create temporary WAV file
+                    # Try using ffmpeg directly first (more reliable)
                     temp_wav = file_path.replace('.mp3', '_temp.wav')
-                    audio_segment.export(temp_wav, format='wav')
                     
-                    # Load WAV with librosa
-                    audio, sr = librosa.load(temp_wav, sr=FS, mono=True)
+                    # Use subprocess to call ffmpeg directly
+                    ffmpeg_cmd = [
+                        'ffmpeg', '-i', file_path,
+                        '-ar', str(FS),  # sample rate
+                        '-ac', '1',       # mono
+                        '-t', str(DURATION),  # duration
+                        '-y',             # overwrite
+                        temp_wav
+                    ]
                     
-                    # Clean up temp file
-                    if os.path.exists(temp_wav):
+                    result = subprocess.run(ffmpeg_cmd, capture_output=True, text=True)
+                    
+                    if result.returncode == 0 and os.path.exists(temp_wav):
+                        # Load WAV with librosa
+                        audio, sr = librosa.load(temp_wav, sr=FS, mono=True)
+                        # Clean up temp file
                         os.unlink(temp_wav)
+                        st.success("✅ MP3 converted and loaded successfully!")
+                    else:
+                        # Clean up if exists
+                        if os.path.exists(temp_wav):
+                            os.unlink(temp_wav)
+                        raise Exception(f"FFmpeg conversion failed: {result.stderr[:200]}")
                     
-                    st.success("✅ MP3 converted and loaded successfully!")
+                except subprocess.CalledProcessError as e:
+                    st.error(f"⚠️ FFmpeg error: {str(e)}")
                     
-                except Exception as e_pydub:
-                    st.warning(f"⚠️ Pydub conversion failed: {type(e_pydub).__name__}")
-                    
-                    # Fallback to librosa for MP3
+                    # Last resort: Try librosa directly
                     try:
                         audio, sr = librosa.load(file_path, sr=FS, duration=DURATION, mono=True)
                         st.success("✅ Audio loaded with librosa fallback!")
                     except Exception as e_librosa:
                         raise Exception(
-                            f"Could not load MP3 file. This may be due to missing ffmpeg on the server.\n\n"
-                            f"**Please convert your MP3 to WAV format** using:\n"
-                            f"- Online tool: https://cloudconvert.com/mp3-to-wav\n"
-                            f"- Or use ffmpeg locally: `ffmpeg -i input.mp3 output.wav`\n\n"
-                            f"Technical: {type(e_pydub).__name__}, {type(e_librosa).__name__}"
+                            f"❌ **Cannot process MP3 on this server.**\n\n"
+                            f"FFmpeg failed to convert the file.\n\n"
+                            f"**Please convert your MP3 to WAV format:**\n"
+                            f"- Online: https://cloudconvert.com/mp3-to-wav\n"
+                            f"- Local: `ffmpeg -i input.mp3 output.wav`\n\n"
+                            f"Technical: subprocess error, librosa: {type(e_librosa).__name__}"
                         )
             
             else:
@@ -343,15 +364,22 @@ def main():
     # Sidebar
     st.sidebar.header("📤 Upload Audio")
     
+    # Show ffmpeg status
+    if FFMPEG_AVAILABLE:
+        st.sidebar.success("✅ FFmpeg available - MP3 conversion enabled")
+    else:
+        st.sidebar.error("❌ FFmpeg not found - MP3 not supported")
+        st.sidebar.warning("**Please upload WAV files only!**")
+    
     # File format help
     with st.sidebar.expander("📋 Supported Formats", expanded=False):
-        st.markdown("""
+        st.markdown(f"""
         **Recommended:**
         - ✅ **WAV** - Best compatibility
         
-        **May require conversion:**
-        - ⚠️ **MP3** - If fails, convert to WAV
-        - ⚠️ **OGG, M4A** - Limited support
+        **MP3 Support:**
+        - {'✅ Enabled (ffmpeg detected)' if FFMPEG_AVAILABLE else '❌ Disabled (ffmpeg missing)'}
+        - If conversion fails, use WAV instead
         
         **How to convert MP3 to WAV:**
         - 🌐 Online: [cloudconvert.com](https://cloudconvert.com/mp3-to-wav)
@@ -376,12 +404,15 @@ def main():
     **Features:**
     - 13 MFCCs (Mel-Frequency Cepstral Coefficients)
     - 10 segments per track
-    
-    **Supported Formats:**
-    - ✅ WAV (best)
-    - ⚠️ MP3 (may have issues)
-    - ⚠️ OGG, M4A (experimental)
     """)
+    
+    # Debug info (collapsible)
+    with st.sidebar.expander("🔧 System Info (Debug)", expanded=False):
+        ffmpeg_path = shutil.which('ffmpeg')
+        st.code(f"""
+FFmpeg: {'✅ Found' if ffmpeg_path else '❌ Not found'}
+Path: {ffmpeg_path or 'N/A'}
+        """.strip())
     
     # Main content
     if uploaded_file is not None:
