@@ -7,5 +7,3 @@ scipy==1.14.1
 soundfile==0.12.1
 audioread==3.0.0
 rich>=10.14.0,<14
-pydub==0.25.1
-ffmpeg-python==0.2.0
