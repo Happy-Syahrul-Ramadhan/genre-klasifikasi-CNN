@@ -65,32 +65,47 @@ def convert_mp3_to_wav(mp3_path):
         # Create temporary WAV file
         wav_path = mp3_path.replace('.mp3', '_converted.wav')
         
-        # Use FFmpeg to convert MP3 to WAV
-        # -i: input file
-        # -ar 22050: sample rate 22050Hz (matches FS)
-        # -ac 1: mono (1 channel)
-        # -y: overwrite output file
-        # -loglevel error: only show errors
+        # Try different FFmpeg strategies
+        # Strategy 1: Standard conversion
         result = subprocess.run(
             ['ffmpeg', '-y', '-i', mp3_path, '-ar', '22050', '-ac', '1', '-loglevel', 'error', wav_path],
             capture_output=True,
             text=True,
-            timeout=60  # 60 second timeout
+            timeout=60
         )
         
-        # Check if WAV file was created successfully
+        # Check if conversion succeeded
         if os.path.exists(wav_path) and os.path.getsize(wav_path) > 0:
             return wav_path
+        
+        # Strategy 2: Force format and codec
+        st.info("🔄 Trying alternative conversion method...")
+        result = subprocess.run(
+            ['ffmpeg', '-y', '-i', mp3_path, '-f', 'wav', '-acodec', 'pcm_s16le', 
+             '-ar', '22050', '-ac', '1', '-loglevel', 'error', wav_path],
+            capture_output=True,
+            text=True,
+            timeout=60
+        )
+        
+        if os.path.exists(wav_path) and os.path.getsize(wav_path) > 0:
+            return wav_path
+        
+        # If both failed, show error
+        if result.stderr:
+            st.error(f"FFmpeg conversion error: {result.stderr}")
         else:
-            if result.stderr:
-                st.error(f"FFmpeg error: {result.stderr}")
-            return None
+            st.error("FFmpeg conversion failed - output file not created")
+        return None
             
     except subprocess.TimeoutExpired:
-        st.error("Conversion timeout - file too large or corrupted")
+        st.error("⏱️ Conversion timeout - file may be too large (>60s processing time)")
+        return None
+    except FileNotFoundError:
+        st.warning("⚠️ FFmpeg not found - will attempt direct MP3 loading")
         return None
     except Exception as e:
-        st.error(f"Conversion error: {e}")
+        st.error(f"❌ Conversion error: {str(e)}")
         return None
 
 
@@ -106,11 +121,57 @@ def extract_mfcc_from_audio(file_path):
                     file_path = converted_wav
                     st.success("✅ MP3 converted to WAV successfully!")
                 else:
-                    st.warning("⚠️ FFmpeg conversion not available, attempting direct MP3 load...")
+                    st.warning("⚠️ FFmpeg conversion failed, trying direct MP3 load...")
         
-        # Load audio file
+        # Load audio file with multiple fallback strategies
+        audio = None
+        sr = None
+        
         with st.spinner("🎵 Loading audio file..."):
-            audio, sr = librosa.load(file_path, sr=FS, duration=DURATION)
+            # Try method 1: Standard librosa load
+            try:
+                audio, sr = librosa.load(file_path, sr=FS, duration=DURATION, mono=True)
+            except Exception as e1:
+                st.info("🔄 Trying alternative audio loading method...")
+                try:
+                    # Method 2: Load with offset
+                    audio, sr = librosa.load(file_path, sr=FS, duration=DURATION, mono=True, offset=0.0)
+                except Exception as e2:
+                    try:
+                        # Method 3: Load full file then trim
+                        audio, sr = librosa.load(file_path, sr=FS, mono=True)
+                        max_samples = FS * DURATION
+                        if len(audio) > max_samples:
+                            audio = audio[:max_samples]
+                        elif len(audio) < max_samples:
+                            audio = np.pad(audio, (0, max_samples - len(audio)), mode='constant')
+                    except Exception as e3:
+                        # Final attempt: use soundfile directly
+                        try:
+                            import soundfile as sf
+                            audio, sr = sf.read(file_path, dtype='float32')
+                            # Convert to mono if stereo
+                            if len(audio.shape) > 1:
+                                audio = np.mean(audio, axis=1)
+                            # Resample if needed
+                            if sr != FS:
+                                audio = librosa.resample(audio, orig_sr=sr, target_sr=FS)
+                                sr = FS
+                            # Trim to duration
+                            max_samples = FS * DURATION
+                            if len(audio) > max_samples:
+                                audio = audio[:max_samples]
+                            elif len(audio) < max_samples:
+                                audio = np.pad(audio, (0, max_samples - len(audio)), mode='constant')
+                        except Exception as e4:
+                            st.error(f"❌ All audio loading methods failed")
+                            with st.expander("🔍 Technical Details"):
+                                st.code(f"Method 1: {str(e1)}\nMethod 2: {str(e2)}\nMethod 3: {str(e3)}\nMethod 4: {str(e4)}")
+                            return None, None, None
+        
+        if audio is None or sr is None:
+            st.error("❌ Failed to load audio data")
+            return None, None, None
         
         # Calculate samples per segment (SAME AS PREPROCESSING)
         samples_per_track = FS * DURATION
@@ -310,7 +371,7 @@ def main():
     )
     
     st.sidebar.markdown("---")
-    st.sidebar.header("ℹ️About")
+    st.sidebar.header("ℹ️ About")
     st.sidebar.info("""
     **Model:** CNN with Regularization & Data Augmentation
     
@@ -321,6 +382,21 @@ def main():
     **Features:**
     - 13 MFCCs (Mel-Frequency Cepstral Coefficients)
     - 10 segments per track
+    """)
+    
+    st.sidebar.markdown("---")
+    st.sidebar.header("💡 Troubleshooting")
+    st.sidebar.warning("""
+    **If file fails to process:**
+    
+    1. **File Size:** Keep under 10MB
+    2. **Format:** Standard MP3 (not DRM-protected)
+    3. **Quality:** 128-320kbps recommended
+    4. **Source:** Files from YouTube/Spotify may have issues
+    
+    **Solution:** Convert to standard MP3/WAV using:
+    - [Online Audio Converter](https://online-audio-converter.com/)
+    - Audacity (free software)
     """)
     
     # Main content
