@@ -89,9 +89,6 @@ def convert_mp3_to_wav(mp3_path):
     except subprocess.TimeoutExpired:
         st.error("Conversion timeout - file too large or corrupted")
         return None
-    except FileNotFoundError:
-        st.warning("FFmpeg not available - trying direct MP3 load...")
-        return None
     except Exception as e:
         st.error(f"Conversion error: {e}")
         return None
@@ -304,8 +301,6 @@ def main():
         st.error("Failed to load model. Please check the model path.")
         return
     
-    st.success("✅ Model loaded successfully!")
-    
     # Sidebar
     st.sidebar.header("📤 Upload Audio")
     uploaded_file = st.sidebar.file_uploader(
@@ -315,13 +310,13 @@ def main():
     )
     
     st.sidebar.markdown("---")
-    st.sidebar.header("ℹ️ About")
+    st.sidebar.header("ℹ️About")
     st.sidebar.info("""
     **Model:** CNN with Regularization & Data Augmentation
     
     **Training Data:**
     - 3 Genres: Ambient, Pop, Rock
-    - ~910 audio segments (3-second clips)
+    - 910 audio segments 
     
     **Features:**
     - 13 MFCCs (Mel-Frequency Cepstral Coefficients)
@@ -439,14 +434,6 @@ def main():
                         st.info("MFCC visualization not available")
                 
                 # Detailed results
-                with st.expander("🔍 View Detailed Results"):
-                    st.write("**All Predictions (per segment):**")
-                    for genre, prob in zip(GENRES, all_predictions):
-                        st.write(f"- {genre.capitalize()}: {prob*100:.2f}%")
-                    
-                    st.write(f"\n**MFCC Shape:** {mfccs.shape}")
-                    st.write(f"**Audio Duration:** {len(audio)/sr:.2f} seconds")
-                    st.write(f"**Sampling Rate:** {sr} Hz")
         
         except Exception as e:
             st.error(f"An error occurred: {e}")
@@ -458,7 +445,6 @@ def main():
     
     else:
         # Instructions when no file is uploaded
-        st.info("👈 Please upload an MP3 file from the sidebar to begin analysis.")
         
         st.subheader("🎯 How to Use")
         st.markdown("""
@@ -468,7 +454,7 @@ def main():
         4. **Explore** various audio visualizations in the tabs
         
         The model analyzes the audio by:
-        - Splitting it into 10 segments (3 seconds each)
+        - Splitting it into 10 segments 
         - Extracting 13 MFCC features from each segment
         - Making predictions for each segment
         - Averaging the predictions for final result
