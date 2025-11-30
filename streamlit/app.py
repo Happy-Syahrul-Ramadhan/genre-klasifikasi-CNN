@@ -7,7 +7,6 @@ from tensorflow.keras.models import load_model
 import tempfile
 import os
 import math
-from pydub import AudioSegment
 
 # Page configuration
 st.set_page_config(
@@ -62,37 +61,33 @@ def load_trained_model():
 def extract_mfcc_from_audio(file_path):
     """Extract MFCC features from audio file - matches preprocessing exactly"""
     try:
-        # Convert MP3 to WAV first using pydub for better compatibility
-        temp_wav = None
-        try:
-            # Try to load MP3 with pydub and convert to WAV
-            audio_segment = AudioSegment.from_file(file_path, format="mp3")
-            
-            # Create temporary WAV file
-            temp_wav = tempfile.NamedTemporaryFile(delete=False, suffix='.wav')
-            audio_segment.export(temp_wav.name, format='wav')
-            temp_wav.close()
-            
-            # Load the WAV file with librosa
-            audio, sr = librosa.load(temp_wav.name, sr=FS, duration=DURATION)
-            
-        except Exception as convert_error:
-            st.warning(f"⚠️ Conversion failed: {convert_error}. Trying direct load...")
-            # Fallback: Try loading directly with librosa
-            try:
-                audio, sr = librosa.load(file_path, sr=FS, duration=DURATION)
-            except Exception as load_error:
-                st.warning(f"Primary audio loader failed: {load_error}. Trying alternative method...")
-                # Try with audioread backend explicitly
-                audio, sr = librosa.load(file_path, sr=FS, duration=DURATION, res_type='kaiser_fast')
+        # Load audio file with optimized settings for cloud environment
+        audio = None
+        sr = None
         
-        finally:
-            # Clean up temporary WAV file
-            if temp_wav and os.path.exists(temp_wav.name):
+        # Try multiple loading strategies
+        try:
+            # Strategy 1: Direct load with soundfile backend (most reliable)
+            audio, sr = librosa.load(file_path, sr=FS, duration=DURATION, mono=True)
+        except Exception as e1:
+            try:
+                # Strategy 2: Use audioread backend with specific offset
+                audio, sr = librosa.load(file_path, sr=FS, duration=DURATION, mono=True, offset=0.0)
+            except Exception as e2:
                 try:
-                    os.unlink(temp_wav.name)
-                except:
-                    pass
+                    # Strategy 3: Load without duration limit first, then trim
+                    audio, sr = librosa.load(file_path, sr=FS, mono=True)
+                    # Trim to desired duration
+                    max_samples = FS * DURATION
+                    if len(audio) > max_samples:
+                        audio = audio[:max_samples]
+                    elif len(audio) < max_samples:
+                        # Pad with zeros if too short
+                        audio = np.pad(audio, (0, max_samples - len(audio)), mode='constant')
+                except Exception as e3:
+                    st.error(f"❌ Could not load audio file. Please ensure it's a valid MP3 file.")
+                    st.error(f"Details: {str(e1)}, {str(e2)}, {str(e3)}")
+                    return None, None, None
         
         # Calculate samples per segment (SAME AS PREPROCESSING)
         samples_per_track = FS * DURATION
@@ -248,7 +243,7 @@ def main():
     uploaded_file = st.sidebar.file_uploader(
         "Choose an MP3 file",
         type=['mp3'],
-        help="Upload an MP3 file to classify its genre"
+        help="Upload an MP3 file to classify its genre. For best results, use standard MP3 files (not iTunes AAC or DRM-protected files)."
     )
     
     st.sidebar.markdown("---")
@@ -263,6 +258,8 @@ def main():
     **Features:**
     - 13 MFCCs (Mel-Frequency Cepstral Coefficients)
     - 10 segments per track
+    
+    **Note:** If you encounter issues loading MP3 files, try converting them to standard MP3 format (128-320kbps, CBR) using online converters.
     """)
     
     # Main content

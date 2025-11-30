@@ -6,5 +6,4 @@ matplotlib==3.8.2
 scipy==1.14.1
 soundfile==0.12.1
 audioread==3.0.1
-pydub==0.25.1
 rich>=10.14.0,<14
