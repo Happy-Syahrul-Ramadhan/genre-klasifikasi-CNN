@@ -7,6 +7,7 @@ from tensorflow.keras.models import load_model
 import tempfile
 import os
 import math
+import subprocess
 
 # Page configuration
 st.set_page_config(
@@ -58,44 +59,52 @@ def load_trained_model():
         return None
 
 
+def convert_mp3_to_wav(mp3_path):
+    """Convert MP3 to WAV using FFmpeg for better compatibility"""
+    try:
+        # Create temporary WAV file
+        wav_path = mp3_path.replace('.mp3', '_converted.wav')
+        
+        # Use FFmpeg to convert MP3 to WAV
+        # -i: input file
+        # -ar 22050: sample rate 22050Hz (matches FS)
+        # -ac 1: mono (1 channel)
+        # -y: overwrite output file
+        subprocess.run(
+            ['ffmpeg', '-i', mp3_path, '-ar', '22050', '-ac', '1', '-y', wav_path],
+            check=True,
+            capture_output=True,
+            text=True
+        )
+        
+        return wav_path
+    except subprocess.CalledProcessError as e:
+        st.error(f"FFmpeg conversion failed: {e.stderr}")
+        return None
+    except FileNotFoundError:
+        st.error("FFmpeg not found. Please ensure FFmpeg is installed.")
+        return None
+    except Exception as e:
+        st.error(f"Conversion error: {e}")
+        return None
+
+
 def extract_mfcc_from_audio(file_path):
     """Extract MFCC features from audio file - matches preprocessing exactly"""
+    converted_wav = None
     try:
-        # Load audio file with optimized settings for cloud environment
-        audio = None
-        sr = None
+        # Auto-convert MP3 to WAV if needed
+        if file_path.lower().endswith('.mp3'):
+            st.info("🔄 Converting MP3 to WAV for better compatibility...")
+            converted_wav = convert_mp3_to_wav(file_path)
+            if converted_wav:
+                file_path = converted_wav
+                st.success("✅ Conversion successful!")
+            else:
+                st.warning("⚠️ Conversion failed, trying direct load...")
         
-        # Try multiple loading strategies
-        try:
-            # Strategy 1: Direct load with soundfile backend (most reliable)
-            audio, sr = librosa.load(file_path, sr=FS, duration=DURATION, mono=True)
-        except Exception as e1:
-            try:
-                # Strategy 2: Use audioread backend with specific offset
-                audio, sr = librosa.load(file_path, sr=FS, duration=DURATION, mono=True, offset=0.0)
-            except Exception as e2:
-                try:
-                    # Strategy 3: Load without duration limit first, then trim
-                    audio, sr = librosa.load(file_path, sr=FS, mono=True)
-                    # Trim to desired duration
-                    max_samples = FS * DURATION
-                    if len(audio) > max_samples:
-                        audio = audio[:max_samples]
-                    elif len(audio) < max_samples:
-                        # Pad with zeros if too short
-                        audio = np.pad(audio, (0, max_samples - len(audio)), mode='constant')
-                except Exception as e3:
-                    st.error(f"❌ Could not load audio file. The MP3 format may not be compatible.")
-                    st.info("""
-                    **💡 Solution:** Please convert your MP3 to WAV format using:
-                    - [Online Audio Converter](https://online-audio-converter.com/) (Free & Easy)
-                    - [CloudConvert](https://cloudconvert.com/mp3-to-wav)
-                    
-                    Then upload the WAV file instead.
-                    """)
-                    with st.expander("🔍 Technical Details"):
-                        st.code(f"Error 1 (soundfile): {str(e1)}\nError 2 (audioread): {str(e2)}\nError 3 (fallback): {str(e3)}")
-                    return None, None, None
+        # Load audio file
+        audio, sr = librosa.load(file_path, sr=FS, duration=DURATION)
         
         # Calculate samples per segment (SAME AS PREPROCESSING)
         samples_per_track = FS * DURATION
@@ -130,10 +139,23 @@ def extract_mfcc_from_audio(file_path):
         if len(mfccs_list) != NUM_SEGMENTS:
             st.warning(f"⚠️ Only {len(mfccs_list)}/{NUM_SEGMENTS} segments have correct length. This may affect prediction accuracy.")
         
+        # Cleanup converted WAV file
+        if converted_wav and os.path.exists(converted_wav):
+            try:
+                os.unlink(converted_wav)
+            except:
+                pass
+        
         return np.array(mfccs_list), audio, sr
     
     except Exception as e:
         st.error(f"Error extracting features: {e}")
+        # Cleanup converted WAV file on error
+        if converted_wav and os.path.exists(converted_wav):
+            try:
+                os.unlink(converted_wav)
+            except:
+                pass
         return None, None, None
 
 
@@ -249,9 +271,9 @@ def main():
     # Sidebar
     st.sidebar.header("📤 Upload Audio")
     uploaded_file = st.sidebar.file_uploader(
-        "Choose an audio file",
-        type=['mp3', 'wav'],
-        help="Upload MP3 or WAV file. If MP3 doesn't work, convert to WAV first using online converters."
+        "Choose an MP3 file",
+        type=['mp3'],
+        help="Upload an MP3 file to classify its genre"
     )
     
     st.sidebar.markdown("---")
@@ -266,10 +288,6 @@ def main():
     **Features:**
     - 13 MFCCs (Mel-Frequency Cepstral Coefficients)
     - 10 segments per track
-    
-    **💡 Tip:** If MP3 upload fails, convert to WAV using:
-    - [Online Audio Converter](https://online-audio-converter.com/)
-    - [CloudConvert](https://cloudconvert.com/mp3-to-wav)
     """)
     
     # Main content
@@ -277,8 +295,7 @@ def main():
         st.header("📊 Analysis Results")
         
         # Save uploaded file temporarily
-        file_extension = uploaded_file.name.split('.')[-1].lower()
-        with tempfile.NamedTemporaryFile(delete=False, suffix=f'.{file_extension}') as tmp_file:
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.mp3') as tmp_file:
             tmp_file.write(uploaded_file.read())
             tmp_file_path = tmp_file.name
         
@@ -391,11 +408,11 @@ def main():
     
     else:
         # Instructions when no file is uploaded
-        st.info("👈 Please upload an audio file (MP3 or WAV) from the sidebar to begin analysis.")
+        st.info("👈 Please upload an MP3 file from the sidebar to begin analysis.")
         
         st.subheader("🎯 How to Use")
         st.markdown("""
-        1. **Upload** an MP3 or WAV file using the sidebar
+        1. **Upload** an MP3 file using the sidebar
         2. **Wait** for the model to analyze the audio
         3. **View** the predicted genre and confidence score
         4. **Explore** various audio visualizations in the tabs
@@ -405,9 +422,6 @@ def main():
         - Extracting 13 MFCC features from each segment
         - Making predictions for each segment
         - Averaging the predictions for final result
-        
-        **⚠️ Note:** Some MP3 files (especially from YouTube or streaming services) may have compatibility issues. 
-        If upload fails, convert to WAV format first.
         """)
         
         st.subheader("📝 Example Genres")
