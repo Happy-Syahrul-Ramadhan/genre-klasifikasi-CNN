@@ -85,8 +85,16 @@ def extract_mfcc_from_audio(file_path):
                         # Pad with zeros if too short
                         audio = np.pad(audio, (0, max_samples - len(audio)), mode='constant')
                 except Exception as e3:
-                    st.error(f"❌ Could not load audio file. Please ensure it's a valid MP3 file.")
-                    st.error(f"Details: {str(e1)}, {str(e2)}, {str(e3)}")
+                    st.error(f"❌ Could not load audio file. The MP3 format may not be compatible.")
+                    st.info("""
+                    **💡 Solution:** Please convert your MP3 to WAV format using:
+                    - [Online Audio Converter](https://online-audio-converter.com/) (Free & Easy)
+                    - [CloudConvert](https://cloudconvert.com/mp3-to-wav)
+                    
+                    Then upload the WAV file instead.
+                    """)
+                    with st.expander("🔍 Technical Details"):
+                        st.code(f"Error 1 (soundfile): {str(e1)}\nError 2 (audioread): {str(e2)}\nError 3 (fallback): {str(e3)}")
                     return None, None, None
         
         # Calculate samples per segment (SAME AS PREPROCESSING)
@@ -241,9 +249,9 @@ def main():
     # Sidebar
     st.sidebar.header("📤 Upload Audio")
     uploaded_file = st.sidebar.file_uploader(
-        "Choose an MP3 file",
-        type=['mp3'],
-        help="Upload an MP3 file to classify its genre. For best results, use standard MP3 files (not iTunes AAC or DRM-protected files)."
+        "Choose an audio file",
+        type=['mp3', 'wav'],
+        help="Upload MP3 or WAV file. If MP3 doesn't work, convert to WAV first using online converters."
     )
     
     st.sidebar.markdown("---")
@@ -259,7 +267,9 @@ def main():
     - 13 MFCCs (Mel-Frequency Cepstral Coefficients)
     - 10 segments per track
     
-    **Note:** If you encounter issues loading MP3 files, try converting them to standard MP3 format (128-320kbps, CBR) using online converters.
+    **💡 Tip:** If MP3 upload fails, convert to WAV using:
+    - [Online Audio Converter](https://online-audio-converter.com/)
+    - [CloudConvert](https://cloudconvert.com/mp3-to-wav)
     """)
     
     # Main content
@@ -267,7 +277,8 @@ def main():
         st.header("📊 Analysis Results")
         
         # Save uploaded file temporarily
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.mp3') as tmp_file:
+        file_extension = uploaded_file.name.split('.')[-1].lower()
+        with tempfile.NamedTemporaryFile(delete=False, suffix=f'.{file_extension}') as tmp_file:
             tmp_file.write(uploaded_file.read())
             tmp_file_path = tmp_file.name
         
@@ -380,11 +391,11 @@ def main():
     
     else:
         # Instructions when no file is uploaded
-        st.info("👈 Please upload an MP3 file from the sidebar to begin analysis.")
+        st.info("👈 Please upload an audio file (MP3 or WAV) from the sidebar to begin analysis.")
         
         st.subheader("🎯 How to Use")
         st.markdown("""
-        1. **Upload** an MP3 file using the sidebar
+        1. **Upload** an MP3 or WAV file using the sidebar
         2. **Wait** for the model to analyze the audio
         3. **View** the predicted genre and confidence score
         4. **Explore** various audio visualizations in the tabs
@@ -394,6 +405,9 @@ def main():
         - Extracting 13 MFCC features from each segment
         - Making predictions for each segment
         - Averaging the predictions for final result
+        
+        **⚠️ Note:** Some MP3 files (especially from YouTube or streaming services) may have compatibility issues. 
+        If upload fails, convert to WAV format first.
         """)
         
         st.subheader("📝 Example Genres")
