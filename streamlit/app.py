@@ -7,6 +7,7 @@ from tensorflow.keras.models import load_model
 import tempfile
 import os
 import math
+from pydub import AudioSegment
 
 # Page configuration
 st.set_page_config(
@@ -61,14 +62,37 @@ def load_trained_model():
 def extract_mfcc_from_audio(file_path):
     """Extract MFCC features from audio file - matches preprocessing exactly"""
     try:
-        # Load audio file with multiple backend support
+        # Convert MP3 to WAV first using pydub for better compatibility
+        temp_wav = None
         try:
-            audio, sr = librosa.load(file_path, sr=FS, duration=DURATION)
-        except Exception as load_error:
-            st.warning(f"Primary audio loader failed: {load_error}. Trying alternative method...")
-            # Try with audioread backend explicitly
-            import audioread
-            audio, sr = librosa.load(file_path, sr=FS, duration=DURATION, res_type='kaiser_fast')
+            # Try to load MP3 with pydub and convert to WAV
+            audio_segment = AudioSegment.from_file(file_path, format="mp3")
+            
+            # Create temporary WAV file
+            temp_wav = tempfile.NamedTemporaryFile(delete=False, suffix='.wav')
+            audio_segment.export(temp_wav.name, format='wav')
+            temp_wav.close()
+            
+            # Load the WAV file with librosa
+            audio, sr = librosa.load(temp_wav.name, sr=FS, duration=DURATION)
+            
+        except Exception as convert_error:
+            st.warning(f"⚠️ Conversion failed: {convert_error}. Trying direct load...")
+            # Fallback: Try loading directly with librosa
+            try:
+                audio, sr = librosa.load(file_path, sr=FS, duration=DURATION)
+            except Exception as load_error:
+                st.warning(f"Primary audio loader failed: {load_error}. Trying alternative method...")
+                # Try with audioread backend explicitly
+                audio, sr = librosa.load(file_path, sr=FS, duration=DURATION, res_type='kaiser_fast')
+        
+        finally:
+            # Clean up temporary WAV file
+            if temp_wav and os.path.exists(temp_wav.name):
+                try:
+                    os.unlink(temp_wav.name)
+                except:
+                    pass
         
         # Calculate samples per segment (SAME AS PREPROCESSING)
         samples_per_track = FS * DURATION
