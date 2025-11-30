@@ -188,59 +188,88 @@ def predict_genre(model, mfccs):
 
 def plot_waveform(audio, sr):
     """Plot audio waveform"""
-    fig, ax = plt.subplots(figsize=(12, 4))
-    librosa.display.waveshow(audio, sr=sr, alpha=0.8, ax=ax)
-    ax.set_xlabel("Time (s)")
-    ax.set_ylabel("Amplitude")
-    ax.set_title("Audio Waveform")
-    plt.tight_layout()
-    return fig
+    try:
+        fig, ax = plt.subplots(figsize=(12, 4))
+        # Use waveshow if available (librosa >= 0.9)
+        try:
+            librosa.display.waveshow(audio, sr=sr, alpha=0.8, ax=ax)
+        except AttributeError:
+            # Fallback to waveplot for older librosa versions
+            librosa.display.waveplot(audio, sr=sr, alpha=0.8, ax=ax)
+        ax.set_xlabel("Time (s)")
+        ax.set_ylabel("Amplitude")
+        ax.set_title("Audio Waveform")
+        plt.tight_layout()
+        return fig
+    except Exception as e:
+        # Manual plotting as last resort
+        fig, ax = plt.subplots(figsize=(12, 4))
+        time = np.arange(0, len(audio)) / sr
+        ax.plot(time, audio, alpha=0.8, linewidth=0.5)
+        ax.set_xlabel("Time (s)")
+        ax.set_ylabel("Amplitude")
+        ax.set_title("Audio Waveform")
+        ax.grid(True, alpha=0.3)
+        plt.tight_layout()
+        return fig
 
 
 def plot_spectrogram(audio, sr):
     """Plot spectrogram"""
-    fig, ax = plt.subplots(figsize=(12, 4))
-    
-    # Calculate STFT
-    stft = np.abs(librosa.stft(audio, n_fft=N_FFT, hop_length=HOP_LENGTH))
-    stft_db = librosa.amplitude_to_db(stft, ref=np.max)
-    
-    img = librosa.display.specshow(stft_db, sr=sr, x_axis='time', y_axis='log', 
-                                    cmap='viridis', ax=ax)
-    ax.set_title('Spectrogram')
-    fig.colorbar(img, ax=ax, format='%+2.0f dB')
-    plt.tight_layout()
-    return fig
+    try:
+        fig, ax = plt.subplots(figsize=(12, 4))
+        
+        # Calculate STFT
+        stft = np.abs(librosa.stft(audio, n_fft=N_FFT, hop_length=HOP_LENGTH))
+        stft_db = librosa.amplitude_to_db(stft, ref=np.max)
+        
+        img = librosa.display.specshow(stft_db, sr=sr, x_axis='time', y_axis='log', 
+                                        cmap='viridis', ax=ax)
+        ax.set_title('Spectrogram')
+        fig.colorbar(img, ax=ax, format='%+2.0f dB')
+        plt.tight_layout()
+        return fig
+    except Exception as e:
+        st.warning(f"Could not generate spectrogram: {e}")
+        return None
 
 
 def plot_mel_spectrogram(audio, sr):
     """Plot mel-scaled spectrogram"""
-    fig, ax = plt.subplots(figsize=(12, 4))
-    
-    # Calculate mel spectrogram
-    mel_spec = librosa.feature.melspectrogram(y=audio, sr=sr, n_mels=128, 
-                                               n_fft=N_FFT, hop_length=HOP_LENGTH)
-    mel_spec_db = librosa.amplitude_to_db(mel_spec, ref=np.max)
-    
-    img = librosa.display.specshow(mel_spec_db, sr=sr, x_axis='time', y_axis='mel',
-                                    cmap='viridis', ax=ax)
-    ax.set_title('Mel-Scaled Spectrogram')
-    fig.colorbar(img, ax=ax, format='%+2.0f dB')
-    plt.tight_layout()
-    return fig
+    try:
+        fig, ax = plt.subplots(figsize=(12, 4))
+        
+        # Calculate mel spectrogram
+        mel_spec = librosa.feature.melspectrogram(y=audio, sr=sr, n_mels=128, 
+                                                   n_fft=N_FFT, hop_length=HOP_LENGTH)
+        mel_spec_db = librosa.amplitude_to_db(mel_spec, ref=np.max)
+        
+        img = librosa.display.specshow(mel_spec_db, sr=sr, x_axis='time', y_axis='mel',
+                                        cmap='viridis', ax=ax)
+        ax.set_title('Mel-Scaled Spectrogram')
+        fig.colorbar(img, ax=ax, format='%+2.0f dB')
+        plt.tight_layout()
+        return fig
+    except Exception as e:
+        st.warning(f"Could not generate mel spectrogram: {e}")
+        return None
 
 
 def plot_mfcc(mfcc, sr):
     """Plot MFCC features"""
-    fig, ax = plt.subplots(figsize=(12, 4))
-    
-    img = librosa.display.specshow(mfcc.T, sr=sr, x_axis='time', 
-                                    y_axis='linear', cmap='viridis', ax=ax)
-    ax.set_title('MFCCs (Mel-Frequency Cepstral Coefficients)')
-    ax.set_ylabel('MFCC Coefficient')
-    fig.colorbar(img, ax=ax, format='%+2.0f')
-    plt.tight_layout()
-    return fig
+    try:
+        fig, ax = plt.subplots(figsize=(12, 4))
+        
+        img = librosa.display.specshow(mfcc.T, sr=sr, x_axis='time', 
+                                        y_axis='linear', cmap='viridis', ax=ax)
+        ax.set_title('MFCCs (Mel-Frequency Cepstral Coefficients)')
+        ax.set_ylabel('MFCC Coefficient')
+        fig.colorbar(img, ax=ax, format='%+2.0f')
+        plt.tight_layout()
+        return fig
+    except Exception as e:
+        st.warning(f"Could not generate MFCC plot: {e}")
+        return None
 
 
 def plot_prediction_bars(predictions):
@@ -374,28 +403,40 @@ def main():
                 with tab1:
                     st.markdown("**Time-domain representation of the audio signal**")
                     fig_wave = plot_waveform(audio, sr)
-                    st.pyplot(fig_wave)
-                    plt.close()
+                    if fig_wave:
+                        st.pyplot(fig_wave)
+                        plt.close()
+                    else:
+                        st.info("Waveform visualization not available")
                 
                 with tab2:
                     st.markdown("**Frequency-time representation of the audio**")
                     fig_spec = plot_spectrogram(audio, sr)
-                    st.pyplot(fig_spec)
-                    plt.close()
+                    if fig_spec:
+                        st.pyplot(fig_spec)
+                        plt.close()
+                    else:
+                        st.info("Spectrogram visualization not available")
                 
                 with tab3:
                     st.markdown("**Mel-scaled frequency representation (human perception)**")
                     fig_mel = plot_mel_spectrogram(audio, sr)
-                    st.pyplot(fig_mel)
-                    plt.close()
+                    if fig_mel:
+                        st.pyplot(fig_mel)
+                        plt.close()
+                    else:
+                        st.info("Mel-Spectrogram visualization not available")
                 
                 with tab4:
                     st.markdown("**Mel-Frequency Cepstral Coefficients used for prediction**")
                     # Show MFCC of first segment
                     fig_mfcc = plot_mfcc(mfccs[0], sr)
-                    st.pyplot(fig_mfcc)
-                    plt.close()
-                    st.caption("*Showing MFCCs from the first 3-second segment*")
+                    if fig_mfcc:
+                        st.pyplot(fig_mfcc)
+                        plt.close()
+                        st.caption("*Showing MFCCs from the first 3-second segment*")
+                    else:
+                        st.info("MFCC visualization not available")
                 
                 # Detailed results
                 with st.expander("🔍 View Detailed Results"):
