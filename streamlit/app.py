@@ -70,19 +70,27 @@ def convert_mp3_to_wav(mp3_path):
         # -ar 22050: sample rate 22050Hz (matches FS)
         # -ac 1: mono (1 channel)
         # -y: overwrite output file
-        subprocess.run(
-            ['ffmpeg', '-i', mp3_path, '-ar', '22050', '-ac', '1', '-y', wav_path],
-            check=True,
+        # -loglevel error: only show errors
+        result = subprocess.run(
+            ['ffmpeg', '-y', '-i', mp3_path, '-ar', '22050', '-ac', '1', '-loglevel', 'error', wav_path],
             capture_output=True,
-            text=True
+            text=True,
+            timeout=60  # 60 second timeout
         )
         
-        return wav_path
-    except subprocess.CalledProcessError as e:
-        st.error(f"FFmpeg conversion failed: {e.stderr}")
+        # Check if WAV file was created successfully
+        if os.path.exists(wav_path) and os.path.getsize(wav_path) > 0:
+            return wav_path
+        else:
+            if result.stderr:
+                st.error(f"FFmpeg error: {result.stderr}")
+            return None
+            
+    except subprocess.TimeoutExpired:
+        st.error("Conversion timeout - file too large or corrupted")
         return None
     except FileNotFoundError:
-        st.error("FFmpeg not found. Please ensure FFmpeg is installed.")
+        st.warning("FFmpeg not available - trying direct MP3 load...")
         return None
     except Exception as e:
         st.error(f"Conversion error: {e}")
@@ -95,16 +103,17 @@ def extract_mfcc_from_audio(file_path):
     try:
         # Auto-convert MP3 to WAV if needed
         if file_path.lower().endswith('.mp3'):
-            st.info("🔄 Converting MP3 to WAV for better compatibility...")
-            converted_wav = convert_mp3_to_wav(file_path)
-            if converted_wav:
-                file_path = converted_wav
-                st.success("✅ Conversion successful!")
-            else:
-                st.warning("⚠️ Conversion failed, trying direct load...")
+            with st.spinner("🔄 Converting MP3 to WAV for better compatibility..."):
+                converted_wav = convert_mp3_to_wav(file_path)
+                if converted_wav and os.path.exists(converted_wav):
+                    file_path = converted_wav
+                    st.success("✅ MP3 converted to WAV successfully!")
+                else:
+                    st.warning("⚠️ FFmpeg conversion not available, attempting direct MP3 load...")
         
         # Load audio file
-        audio, sr = librosa.load(file_path, sr=FS, duration=DURATION)
+        with st.spinner("🎵 Loading audio file..."):
+            audio, sr = librosa.load(file_path, sr=FS, duration=DURATION)
         
         # Calculate samples per segment (SAME AS PREPROCESSING)
         samples_per_track = FS * DURATION
